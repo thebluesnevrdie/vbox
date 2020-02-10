@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-
 import bottle, subprocess
 from bottle import run, get
 
