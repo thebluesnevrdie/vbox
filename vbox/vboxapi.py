@@ -1,4 +1,4 @@
-import subprocess
+import re, subprocess
 from fastapi import FastAPI, HTTPException
 
 app = FastAPI()
@@ -124,7 +124,89 @@ def getMachinesList():
 
 @app.get("/machines/{vm}")
 def getMachinesNodeInfo(vm: str):
-    raise HTTPException(status_code=501)
+    def _buildSharedFolders():
+        # --machinereadable output does not include readonly and auto-mount details, so we must get
+        shares_detail = _runVBoxManage(["showvminfo", vm])
+        details = {}
+        processing = False
+        for line in shares_detail:
+            if processing:
+                # share detail lines look like:
+                # Name: 'share1', Host path: '/srv/testshare1' (machine mapping), writable
+                # Name: 'share2', Host path: '/srv/testshare2' (machine mapping), readonly, auto-mount
+                # Name: 'share3', Host path: '/srv/testshare3' (machine mapping), writable, mount-point: '/media'
+                # Name: 'share4', Host path: '/srv/testshare4' (machine mapping), readonly, auto-mount, mount-point: '/mnt'
+                if line.startswith("Name: "):
+                    split = line.split(",")
+                    begin = split[0].find("'") + 1
+                    key = split[0][begin:-1]
+                    details[key] = {}
+                    path_match = re.match(
+                        " Host path\: '(.+)' \(machine mapping\)", split[1]
+                    )
+                    details[key]["Path"] = path_match.group(1)
+                    if split[2] == " readonly":
+                        details[key]["Readonly"] = "true"
+                    else:
+                        details[key]["Readonly"] = "false"
+
+                    if len(split) > 3:
+                        if "point" in split[-1]:
+                            index = split[-1].find("'") + 1
+                            details[key]["Mountpoint"] = split[-1][index:-1]
+                            if len(split) == 5:
+                                details[key]["Automount"] = "true"
+                            else:
+                                details[key]["Automount"] = "false"
+                        else:
+                            details[key]["Mountpoint"] = "none"
+                            details[key]["Automount"] = "true"
+                    else:
+                        details[key]["Mountpoint"] = "none"
+                        details[key]["Automount"] = "false"
+            else:
+                if line.startswith("Shared folders:"):
+                    # skip all other lines until we get to the shares towards the end
+                    processing = True
+        return details
+
+    def _buildVRDE(keys):
+        vrde = {"properties": {}}
+        for tmp_key, val in keys.items():
+            if tmp_key == "vrde":
+                if val == "off":
+                    return {"enabled": "false"}
+                else:
+                    vrde["enabled"] = "true"
+            elif tmp_key.startswith("vrdeproperty"):
+                prop_key = tmp_key[13:-1]
+                key, subkey = prop_key.split("/")
+                if not vrde["properties"].get(key):
+                    vrde["properties"][key] = {}
+                vrde["properties"][key][subkey] = val.strip("<>")
+            else:
+                key = tmp_key[4:]
+                vrde[key] = val
+        return vrde
+
+    nodeinfo = {}
+    vrde_list = {}
+    found_shares = False
+    nodeinfo_list = _runVBoxManage(["showvminfo", vm, "--machinereadable"])
+    for line in nodeinfo_list:
+        tmp_key, tmp_val = line.split("=")
+        key = tmp_key.strip('"')
+        val = tmp_val.strip('"')
+        if key.startswith("vrde"):
+            vrde_list[key] = val
+        elif key.startswith("SharedFolder"):
+            found_shares = True
+        else:
+            nodeinfo[key] = val
+    nodeinfo["vrde"] = _buildVRDE(vrde_list)
+    if found_shares:
+        nodeinfo["shares"] = _buildSharedFolders()
+    return nodeinfo
 
 
 @app.get("/machines/{vm}/nics")
