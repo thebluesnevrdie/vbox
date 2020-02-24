@@ -98,11 +98,6 @@ def getHostProperties():
     return properties
 
 
-@app.get("/host/usb")
-def getHostUsb():
-    raise HTTPException(status_code=501)
-
-
 @app.get("/machines")
 def getMachinesList():
     all_vms = {}
@@ -209,41 +204,37 @@ def getMachinesNodeInfo(vm: str):
     return nodeinfo
 
 
-@app.get("/machines/{vm}/nics")
-def getMachinesNodeNics(vm: str):
-    raise HTTPException(status_code=501)
-
-
-@app.get("/machines/{vm}/shares")
-def getMachinesNodeShares(vm: str):
-    raise HTTPException(status_code=501)
-
-
 @app.get("/dhcpservers")
 def getDhcpserversList():
     raise HTTPException(status_code=501)
 
 
-@app.get("/dhcpservers/{server}")
-def getDhcpserverInfo(server: str):
-    raise HTTPException(status_code=501)
-
-
 @app.get("/hostonlynets")
 def getHostonlynetsList():
-    raise HTTPException(status_code=501)
+    hostonly = {}
+    hostonly_list = _runVBoxManage(["list", "hostonlyifs"])
+    for line in hostonly_list:
+        if len(line) == 0:
+            continue
+        if line.startswith("Name:"):
+            current_hostonly = line[5:].strip()
+            hostonly[current_hostonly] = {}
+        else:
+            key, val = line.split(": ")
+            hostonly[current_hostonly][key] = val.strip()
+    return hostonly
 
 
-@app.get("/hostonlynets/{net}")
-def getHostonlyInfo(net: str):
-    raise HTTPException(status_code=501)
+@app.get("/intnets")
+def getInternalnetsList():
+    intnets = []
+    intnets_list = _runVBoxManage(["list", "intnets"])
+    for line in intnets_list:
+        key, val = line.split(":")
+        intnets.append(val.strip())
+    return intnets
 
 
 @app.get("/natnetworks")
 def getNatnetworksList():
-    raise HTTPException(status_code=501)
-
-
-@app.get("/natnetworks/{net}")
-def getNatnetworkInfo(net: str):
     raise HTTPException(status_code=501)
