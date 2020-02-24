@@ -9,8 +9,7 @@ setup(
     include_package_data=True,
     install_requires=[
         "setuptools",
-        "bottle",
-        "bash",
+        "fastapi",
         "click",
     ],
     entry_points="""
