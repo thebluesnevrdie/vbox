@@ -206,7 +206,26 @@ def getMachinesNodeInfo(vm: str):
 
 @app.get("/dhcpservers")
 def getDhcpserversList():
-    raise HTTPException(status_code=501)
+    dhcpserv = {}
+    dhcpserv_list = _runVBoxManage(["list", "dhcpservers"])
+    for line in dhcpserv_list:
+        if len(line) == 0:
+            continue
+        if line.startswith("NetworkName"):
+            globalopts = False
+            key, val = line.split(": ")
+            current_dhcp = val.strip()
+            dhcpserv[current_dhcp] = {}
+        elif globalopts:
+            key, val = line.split(":")
+            dhcpserv[current_dhcp]["Global opts"][key.strip()] = val.strip()
+        elif line.startswith("Global options"):
+            dhcpserv[current_dhcp]["Global opts"] = {}
+            globalopts = True
+        else:
+            key, val = line.split(": ")
+            dhcpserv[current_dhcp][key] = val.strip()
+    return dhcpserv
 
 
 @app.get("/hostonlynets")
