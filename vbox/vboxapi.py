@@ -256,4 +256,42 @@ def getInternalnetsList():
 
 @app.get("/natnetworks")
 def getNatnetworksList():
-    raise HTTPException(status_code=501)
+    natnets = {}
+    natnets_list = _runVBoxManage(["list", "natnets"])
+    for line in natnets_list:
+        if len(line) == 0:
+            continue
+        if line.startswith("NetworkName"):
+            loopmap, forward_ipv4, forward_ipv6 = False, False, False
+            key, val = line.split(": ")
+            current_net = val.strip()
+            natnets[current_net] = {}
+        elif line.startswith("loopback mappings"):
+            natnets[current_net]["loopback mappings"] = {}
+            loopmap, forward_ipv4, forward_ipv6 = True, False, False
+        elif line.startswith("Port-forwarding"):
+            if not natnets[current_net].get("Port forwarding"):
+                natnets[current_net]["Port forwarding"] = {}
+            if line.endswith("(ipv4)"):
+                loopmap, forward_ipv4, forward_ipv6 = False, True, False
+                natnets[current_net]["Port forwarding"]["ipv4"] = {}
+            elif line.endswith("(ipv6)"):
+                loopmap, forward_ipv4, forward_ipv6 = False, False, True
+                natnets[current_net]["Port forwarding"]["ipv6"] = {}
+        elif forward_ipv4:
+            delim = line.find(":")
+            key = line[:delim].strip()
+            val = line[delim + 1 :].strip()
+            natnets[current_net]["Port forwarding"]["ipv4"][key] = val
+        elif forward_ipv6:
+            delim = line.find(":")
+            key = line[:delim].strip()
+            val = line[delim + 1 :].strip()
+            natnets[current_net]["Port forwarding"]["ipv6"][key] = val
+        elif loopmap:
+            key, val = line.split("=")
+            natnets[current_net]["loopback mappings"][key.strip()] = val.strip()
+        else:
+            key, val = line.split(": ")
+            natnets[current_net][key] = val.strip()
+    return natnets
