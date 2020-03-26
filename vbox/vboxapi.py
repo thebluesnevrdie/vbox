@@ -189,10 +189,10 @@ def getMachinesNodeInfo(vm: str):
     found_shares = False
     nodeinfo_list = _runVBoxManage(["showvminfo", vm, "--machinereadable"])
     for line in nodeinfo_list:
-        tmp_key, tmp_val = line.split("=")
-        key = tmp_key.strip('"')
-        val = tmp_val.strip('"')
-        if key.startswith("vrde"):
+        delim = line.find("=")
+        key = line[:delim].strip('"=')
+        val = line[delim:].strip('"=')
+        if key.lower().startswith("vrde"):
             vrde_list[key] = val
         elif key.startswith("SharedFolder"):
             found_shares = True
