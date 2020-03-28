@@ -9,11 +9,11 @@ VBoxManagePath = ["/usr/bin/VBoxManage"]
 
 def _runVBoxManage(opts):
     command = VBoxManagePath + opts
-    print(command)
+    print(command)  # debug
     process = subprocess.run(command, capture_output=True)
     if process.returncode != 0:
         error_list = process.stderr.splitlines()
-        print(error_list)
+        print(error_list)  # debug
         # if VBoxManage usage info is included in output, skip it
         if (len(error_list) > 4) and (error_list[4] == b"Usage:"):
             error_list = error_list[749:]
@@ -192,6 +192,24 @@ def getMachinesNodeInfo(vm: str):
         delim = line.find("=")
         key = line[:delim].strip('"=')
         val = line[delim:].strip('"=')
+        found_net_line = False
+        for keytype in [
+            "nic",
+            "cable",
+            "mac",
+            "mtu",
+            "hostonly",
+            "nat",
+            "sock",
+            "tcp",
+            "bridge",
+            "tracing",
+        ]:
+            if key.startswith(keytype):
+                found_net_line = True
+                break
+        if found_net_line:
+            continue
         if key.lower().startswith("vrde"):
             vrde_list[key] = val
         elif key.startswith("SharedFolder"):
@@ -201,6 +219,7 @@ def getMachinesNodeInfo(vm: str):
     nodeinfo["vrde"] = _buildVRDE(vrde_list)
     if found_shares:
         nodeinfo["shares"] = _buildSharedFolders()
+    nodeinfo["nics"] = getNicInfo(vm)
     return nodeinfo
 
 
@@ -295,3 +314,51 @@ def getNatnetworksList():
             key, val = line.split(": ")
             natnets[current_net][key] = val.strip()
     return natnets
+
+
+def getNicInfo(vm: str):
+    nicinfo = {}
+    nicinfo_list = _runVBoxManage(["showvminfo", vm])
+    for line in nicinfo_list:
+        if line.startswith("NIC"):
+            delim = line.find(":") + 1
+            nic_num = line[4]
+            if "Settings" in line[5:delim]:
+                line = line.replace(", receive:", "/ receive=")
+                line = line.replace("(send:", ":send=")
+            else:
+                nicinfo[nic_num] = {}
+                if "disabled" in line[delim:]:
+                    nicinfo[nic_num] = "disabled"
+                    continue
+            nic_settings = line[delim:].split(",")
+            for setting in nic_settings:
+                if "Trace" in setting:
+                    trace_delim = setting.find("(")
+                    trace_val = setting[setting.find(":") + 1 : trace_delim]
+                    trace_file = setting[setting.find("file: ") + 6 : -1]
+                    nicinfo[nic_num]["Trace"] = trace_val.strip()
+                    nicinfo[nic_num]["Trace file"] = trace_file.strip()
+                    continue
+                tmp_key, tmp_val = setting.split(":")
+                key = tmp_key.strip()
+                if key == "Attachment":
+                    if "NAT" in tmp_val:
+                        val = "NAT"
+                    elif "Bridged" in tmp_val:
+                        delim = tmp_val.find("'") + 1
+                        nicinfo[nic_num]["Interface"] = tmp_val[delim:-1]
+                        val = "Bridged"
+                    elif "Host-only" in tmp_val:
+                        delim = tmp_val.find("'") + 1
+                        nicinfo[nic_num]["Interface"] = tmp_val[delim:-1]
+                        val = "Host-only"
+                elif key in ["Socket", "TCP Window"]:
+                    val = {}
+                    tmp_send, tmp_recv = tmp_val.split("/")
+                    val["send"] = tmp_send[tmp_send.find("=") :].strip("= )")
+                    val["receive"] = tmp_recv[tmp_recv.find("=") :].strip("= )")
+                else:
+                    val = tmp_val.strip(" )")
+                nicinfo[nic_num][key] = val
+    return nicinfo
