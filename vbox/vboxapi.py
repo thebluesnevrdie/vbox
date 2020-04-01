@@ -194,15 +194,16 @@ def getMachinesNodeInfo(vm: str):
         val = line[delim:].strip('"=')
         found_net_line = False
         for keytype in [
-            "nic",
+            "bridge",
             "cable",
+            "hostonly",
+            "intnet",
             "mac",
             "mtu",
-            "hostonly",
             "nat",
+            "nic",
             "sock",
             "tcp",
-            "bridge",
             "tracing",
         ]:
             if key.startswith(keytype):
@@ -343,16 +344,24 @@ def getNicInfo(vm: str):
                 tmp_key, tmp_val = setting.split(":")
                 key = tmp_key.strip()
                 if key == "Attachment":
-                    if "NAT" in tmp_val:
-                        val = "NAT"
+                    if "NAT Network" in tmp_val:
+                        delim = tmp_val.find("'") + 1
+                        nicinfo[nic_num]["network"] = tmp_val[delim:-1]
+                        val = "natnetwork"
+                    elif "NAT" in tmp_val:
+                        val = "nat"
                     elif "Bridged" in tmp_val:
                         delim = tmp_val.find("'") + 1
-                        nicinfo[nic_num]["Interface"] = tmp_val[delim:-1]
-                        val = "Bridged"
+                        nicinfo[nic_num]["interface"] = tmp_val[delim:-1]
+                        val = "bridged"
+                    elif "Internal" in tmp_val:
+                        delim = tmp_val.find("'") + 1
+                        nicinfo[nic_num]["network"] = tmp_val[delim:-1]
+                        val = "intnet"
                     elif "Host-only" in tmp_val:
                         delim = tmp_val.find("'") + 1
-                        nicinfo[nic_num]["Interface"] = tmp_val[delim:-1]
-                        val = "Host-only"
+                        nicinfo[nic_num]["network"] = tmp_val[delim:-1]
+                        val = "hostonly"
                 elif key in ["Socket", "TCP Window"]:
                     val = {}
                     tmp_send, tmp_recv = tmp_val.split("/")
