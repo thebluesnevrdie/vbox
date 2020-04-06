@@ -137,7 +137,7 @@ def _buildVRDE(keys):
     return vrde
 
 
-def _buildSharedFolders():
+def _buildSharedFolders(vm: str):
     # --machinereadable output does not include readonly and auto-mount details, so we must get
     shares_detail = _runVBoxManage(["showvminfo", vm])
     details = {}
@@ -219,7 +219,7 @@ def getMachinesNodeInfo(vm: str):
             nodeinfo[key] = val
     nodeinfo["vrde"] = _buildVRDE(vrde_list)
     if found_shares:
-        nodeinfo["shares"] = _buildSharedFolders()
+        nodeinfo["shares"] = _buildSharedFolders(vm)
     nodeinfo["nics"] = getNicInfo(vm)
     return nodeinfo
 
