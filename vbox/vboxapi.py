@@ -324,6 +324,9 @@ def getNicInfo(vm: str):
         if line.startswith("NIC"):
             delim = line.find(":") + 1
             nic_num = line[4]
+            if "Generic" in line:
+                line = line.replace("', ", "@")
+                line = line.replace(" }", "")
             if "Settings" in line[5:delim]:
                 line = line.replace(", receive:", "/ receive=")
                 line = line.replace("(send:", ":send=")
@@ -362,6 +365,15 @@ def getNicInfo(vm: str):
                         delim = tmp_val.find("'") + 1
                         nicinfo[nic_num]["network"] = tmp_val[delim:-1]
                         val = "hostonly"
+                    elif "Generic" in tmp_val:
+                        tmp_drv, tmp_prop = tmp_val.split("{ ")
+                        delim = tmp_drv.find("'") + 1
+                        nicinfo[nic_num]["generic driver"] = tmp_drv[delim:].strip("' ")
+                        nicinfo[nic_num]["generic properties"] = {}
+                        for prop in tmp_prop.split("@"):
+                            prop_key, prop_val = prop.split("=")
+                            nicinfo[nic_num]["generic properties"][prop_key] = prop_val.strip("'")
+                        val = "generic"
                 elif key in ["Socket", "TCP Window"]:
                     val = {}
                     tmp_send, tmp_recv = tmp_val.split("/")
