@@ -117,73 +117,75 @@ def getMachinesList():
     return all_vms
 
 
-@app.get("/machines/{vm}")
-def getMachinesNodeInfo(vm: str):
-    def _buildSharedFolders():
-        # --machinereadable output does not include readonly and auto-mount details, so we must get
-        shares_detail = _runVBoxManage(["showvminfo", vm])
-        details = {}
-        processing = False
-        for line in shares_detail:
-            if processing:
-                # share detail lines look like:
-                # Name: 'share1', Host path: '/srv/testshare1' (machine mapping), writable
-                # Name: 'share2', Host path: '/srv/testshare2' (machine mapping), readonly, auto-mount
-                # Name: 'share3', Host path: '/srv/testshare3' (machine mapping), writable, mount-point: '/media'
-                # Name: 'share4', Host path: '/srv/testshare4' (machine mapping), readonly, auto-mount, mount-point: '/mnt'
-                if line.startswith("Name: "):
-                    split = line.split(",")
-                    begin = split[0].find("'") + 1
-                    key = split[0][begin:-1]
-                    details[key] = {}
-                    path_match = re.match(
-                        " Host path\: '(.+)' \(machine mapping\)", split[1]
-                    )
-                    details[key]["Path"] = path_match.group(1)
-                    if split[2] == " readonly":
-                        details[key]["Readonly"] = "true"
-                    else:
-                        details[key]["Readonly"] = "false"
+def _buildVRDE(keys):
+    vrde = {"properties": {}}
+    for tmp_key, val in keys.items():
+        if tmp_key == "vrde":
+            if val == "off":
+                return {"enabled": "false"}
+            else:
+                vrde["enabled"] = "true"
+        elif tmp_key.startswith("vrdeproperty"):
+            prop_key = tmp_key[13:-1]
+            key, subkey = prop_key.split("/")
+            if not vrde["properties"].get(key):
+                vrde["properties"][key] = {}
+            vrde["properties"][key][subkey] = val.strip("<>")
+        else:
+            key = tmp_key[4:]
+            vrde[key] = val
+    return vrde
 
-                    if len(split) > 3:
-                        if "point" in split[-1]:
-                            index = split[-1].find("'") + 1
-                            details[key]["Mountpoint"] = split[-1][index:-1]
-                            if len(split) == 5:
-                                details[key]["Automount"] = "true"
-                            else:
-                                details[key]["Automount"] = "false"
-                        else:
-                            details[key]["Mountpoint"] = "none"
+
+def _buildSharedFolders():
+    # --machinereadable output does not include readonly and auto-mount details, so we must get
+    shares_detail = _runVBoxManage(["showvminfo", vm])
+    details = {}
+    processing = False
+    for line in shares_detail:
+        if processing:
+            # share detail lines look like:
+            # Name: 'share1', Host path: '/srv/testshare1' (machine mapping), writable
+            # Name: 'share2', Host path: '/srv/testshare2' (machine mapping), readonly, auto-mount
+            # Name: 'share3', Host path: '/srv/testshare3' (machine mapping), writable, mount-point: '/media'
+            # Name: 'share4', Host path: '/srv/testshare4' (machine mapping), readonly, auto-mount, mount-point: '/mnt'
+            if line.startswith("Name: "):
+                split = line.split(",")
+                begin = split[0].find("'") + 1
+                key = split[0][begin:-1]
+                details[key] = {}
+                path_match = re.match(
+                    " Host path\: '(.+)' \(machine mapping\)", split[1]
+                )
+                details[key]["Path"] = path_match.group(1)
+                if split[2] == " readonly":
+                    details[key]["Readonly"] = "true"
+                else:
+                    details[key]["Readonly"] = "false"
+
+                if len(split) > 3:
+                    if "point" in split[-1]:
+                        index = split[-1].find("'") + 1
+                        details[key]["Mountpoint"] = split[-1][index:-1]
+                        if len(split) == 5:
                             details[key]["Automount"] = "true"
+                        else:
+                            details[key]["Automount"] = "false"
                     else:
                         details[key]["Mountpoint"] = "none"
-                        details[key]["Automount"] = "false"
-            else:
-                if line.startswith("Shared folders:"):
-                    # skip all other lines until we get to the shares towards the end
-                    processing = True
-        return details
-
-    def _buildVRDE(keys):
-        vrde = {"properties": {}}
-        for tmp_key, val in keys.items():
-            if tmp_key == "vrde":
-                if val == "off":
-                    return {"enabled": "false"}
+                        details[key]["Automount"] = "true"
                 else:
-                    vrde["enabled"] = "true"
-            elif tmp_key.startswith("vrdeproperty"):
-                prop_key = tmp_key[13:-1]
-                key, subkey = prop_key.split("/")
-                if not vrde["properties"].get(key):
-                    vrde["properties"][key] = {}
-                vrde["properties"][key][subkey] = val.strip("<>")
-            else:
-                key = tmp_key[4:]
-                vrde[key] = val
-        return vrde
+                    details[key]["Mountpoint"] = "none"
+                    details[key]["Automount"] = "false"
+        else:
+            if line.startswith("Shared folders:"):
+                # skip all other lines until we get to the shares towards the end
+                processing = True
+    return details
 
+
+@app.get("/machines/{vm}")
+def getMachinesNodeInfo(vm: str):
     nodeinfo = {}
     vrde_list = {}
     found_shares = False
