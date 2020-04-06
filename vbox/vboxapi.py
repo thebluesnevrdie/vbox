@@ -186,6 +186,20 @@ def _buildSharedFolders():
 
 @app.get("/machines/{vm}")
 def getMachinesNodeInfo(vm: str):
+    nickeys = [
+        "bridge",
+        "cable",
+        "hostonly",
+        "intnet",
+        "mac",
+        "mtu",
+        "nat",
+        "nic",
+        "sock",
+        "tcp",
+        "tracing",
+    ]
+
     nodeinfo = {}
     vrde_list = {}
     found_shares = False
@@ -194,24 +208,8 @@ def getMachinesNodeInfo(vm: str):
         delim = line.find("=")
         key = line[:delim].strip('"=')
         val = line[delim:].strip('"=')
-        found_net_line = False
-        for keytype in [
-            "bridge",
-            "cable",
-            "hostonly",
-            "intnet",
-            "mac",
-            "mtu",
-            "nat",
-            "nic",
-            "sock",
-            "tcp",
-            "tracing",
-        ]:
-            if key.startswith(keytype):
-                found_net_line = True
-                break
-        if found_net_line:
+        # if line contains a network type key, skip
+        if list(filter(key.startswith, nickeys)) != []:
             continue
         if key.lower().startswith("vrde"):
             vrde_list[key] = val
@@ -374,7 +372,9 @@ def getNicInfo(vm: str):
                         nicinfo[nic_num]["generic properties"] = {}
                         for prop in tmp_prop.split("@"):
                             prop_key, prop_val = prop.split("=")
-                            nicinfo[nic_num]["generic properties"][prop_key] = prop_val.strip("'")
+                            nicinfo[nic_num]["generic properties"][
+                                prop_key
+                            ] = prop_val.strip("'")
                         val = "generic"
                 elif key in ["Socket", "TCP Window"]:
                     val = {}
