@@ -370,12 +370,13 @@ def getNicInfo(vm: str):
                         delim = tmp_drv.find("'") + 1
                         nicinfo[nic_num]["generic driver"] = tmp_drv[delim:].strip("' ")
                         nicinfo[nic_num]["generic properties"] = {}
-                        for prop in tmp_prop.split("@"):
-                            prop_key, prop_val = prop.split("=")
-                            nicinfo[nic_num]["generic properties"][
-                                prop_key
-                            ] = prop_val.strip("'")
                         val = "generic"
+                        if tmp_prop:
+                            for prop in tmp_prop.split("@"):
+                                prop_key, prop_val = prop.split("=")
+                                nicinfo[nic_num]["generic properties"][
+                                    prop_key
+                                ] = prop_val.strip("'")
                 elif key in ["Socket", "TCP Window"]:
                     val = {}
                     tmp_send, tmp_recv = tmp_val.split("/")
