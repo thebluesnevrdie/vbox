@@ -189,6 +189,7 @@ def getMachinesNodeInfo(vm: str):
     nickeys = [
         "bridge",
         "cable",
+        "generic",
         "hostonly",
         "intnet",
         "mac",
