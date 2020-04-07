@@ -215,6 +215,12 @@ def getMachinesNodeInfo(vm: str):
             vrde_list[key] = val
         elif key.startswith("SharedFolder"):
             found_shares = True
+        elif key.startswith("captureopts"):
+            nodeinfo["captureopts"] = {}
+            if key.strip():
+                for opt in val.split(","):
+                    opt_key, opt_val = opt.split("=")
+                    nodeinfo["captureopts"][opt_key] = opt_val
         else:
             nodeinfo[key] = val
     nodeinfo["vrde"] = _buildVRDE(vrde_list)
