@@ -200,10 +200,12 @@ def getMachinesNodeInfo(vm: str):
         "tcp",
         "tracing",
     ]
-
+    diskkeys = ["storage"]
     nodeinfo = {}
     vrde_list = {}
+    disk_list = {}
     found_shares = False
+    found_storage = False
     nodeinfo_list = _runVBoxManage(["showvminfo", vm, "--machinereadable"])
     for line in nodeinfo_list:
         delim = line.find("=")
@@ -212,13 +214,20 @@ def getMachinesNodeInfo(vm: str):
         # if line contains a network type key, skip
         if list(filter(key.startswith, nickeys)) != []:
             continue
-        if key.lower().startswith("vrde"):
+        # this key will define what controller-specific lines will start with
+        if key.startswith("storagecontrollername"):
+            found_storage = True
+            diskkeys.append(val)
+        if list(filter(key.startswith, diskkeys)) != []:
+            found_storage = True
+            disk_list[key] = val
+        elif key.lower().startswith("vrde"):
             vrde_list[key] = val
         elif key.startswith("SharedFolder"):
             found_shares = True
         elif key.startswith("captureopts"):
             nodeinfo["captureopts"] = {}
-            if key.strip():
+            if val.strip():
                 for opt in val.split(","):
                     opt_key, opt_val = opt.split("=")
                     nodeinfo["captureopts"][opt_key] = opt_val
@@ -228,6 +237,8 @@ def getMachinesNodeInfo(vm: str):
     if found_shares:
         nodeinfo["shares"] = _buildSharedFolders(vm)
     nodeinfo["nics"] = getNicInfo(vm)
+    if found_storage:
+        nodeinfo["storage"] = _getStorageInfo(disk_list)
     return nodeinfo
 
 
@@ -393,3 +404,130 @@ def getNicInfo(vm: str):
                     val = tmp_val.strip(" )")
                 nicinfo[nic_num][key] = val
     return nicinfo
+
+
+def _getStoragePair(our_bus, our_chip):
+    controllers = {
+        "sata": ["IntelAhci"],
+        "ide": ["PIIX4", "PIIX3", "ICH6"],
+        "scsi": ["LSILogic", "BusLogic"],
+        "floppy": ["I82078"],
+        "sas": ["LSILogicSAS"],
+        "usb": ["USB"],
+        "pcie": ["NVMe"],
+    }
+
+    # if no bus and no chipset were passed
+    if (not our_bus) and (not our_chip):
+        # return sata as a default
+        return ["sata", controllers["sata"][0]]
+    # if bus was passed but chipset was not
+    elif not our_chip:
+        if not (our_bus.lower() in controllers):
+            raise HTTPException(
+                status_code=405, detail=f"The specified bus ({our_bus}) does not exist."
+            )
+        # first chipset is the default
+        return [our_bus.lower(), controllers[our_bus.lower()][0]]
+    # if bus was not passed but chipset was
+    elif not our_bus:
+        # NVMe will show up as 'unknown'
+        if our_chip == "unknown":
+            return ["pcie", "NVMe"]
+        for bus, chips in controllers.items():
+            for cur_chip in chips:
+                if our_chip.lower() == cur_chip.lower():
+                    return [bus, cur_chip]
+        raise HTTPException(
+            status_code=405,
+            detail=f"The specified chipset ({our_chip}) does not exist.",
+        )
+    # if both bus and chipset were passed
+    else:
+        if not our_bus.lower() in controllers.keys():
+            raise HTTPException(
+                status_code=405, detail=f"The specified bus ({our_bus}) does not exist."
+            )
+        else:
+            for cur_chip in controllers[our_bus.lower()]:
+                if our_chip.lower() == cur_chip.lower():
+                    return [our_bus.lower(), cur_chip]
+            raise HTTPException(
+                status_code=405,
+                detail=f"The specified chipset ({our_chip}) cannot be used with the {our_bus} bus.",
+            )
+
+
+def _getStorageInfo(storage_keys):
+    our_storage = {}
+    for key, val in storage_keys.items():
+        # keys are formatted as 'storagecontroller<key><ID>'
+        # example: storagecontrollername0="MYSATACTL"
+        if "storagecontroller" in key:
+            ctrl_num = str(key[-1])
+            if not ctrl_num in our_storage:
+                our_storage[ctrl_num] = {}
+            if "storagecontrollertype" in key:
+                # bus is never set, so we have to determine it using the chipset
+                bus, controller = _getStoragePair(None, val)
+                our_storage[ctrl_num]["bus"] = bus
+                our_storage[ctrl_num]["controller"] = controller
+            else:
+                # extract the variable name from 'storagecontroller<key><ID>'
+                sub_key = key[17:-1]
+                if not (sub_key == "maxportcount" or sub_key == "instance"):
+                    our_storage[ctrl_num][sub_key] = val
+    for ctrl_num, attrs in our_storage.items():
+        if not "ports" in our_storage[ctrl_num]:
+            our_storage[ctrl_num]["ports"] = {}
+        for key, val in storage_keys.items():
+            # Storage lines look like:
+            # "MYSATACTL-0-0"="/home/jsmith/testdrive2.vdi"
+            # "MYSATACTL-ImageUUID-0-0"="2a679b54-6d43-48ba-7c82-9b361e4dd813"
+            line_match = re.match(attrs["name"] + "-(ImageUUID-)?(\d-\d)", key)
+            if line_match:
+                our_port = line_match.group(2)
+                if not our_port in our_storage[ctrl_num]["ports"]:
+                    our_storage[ctrl_num]["ports"][our_port] = {}
+                # if we have an ImageUUID
+                if line_match.group(1):
+                    # Find base image UUID
+                    our_medium, our_type, our_uuid = _find_storage_base(val)
+                    our_storage[ctrl_num]["ports"][our_port]["medium"] = our_medium
+                    our_storage[ctrl_num]["ports"][our_port]["devtype"] = our_type
+                    our_storage[ctrl_num]["ports"][our_port]["UUID"] = our_uuid
+    return our_storage
+
+
+@app.get("/storage")
+def getStorageList():
+    storage = {}
+    storage_types = {"hdds": "hdd", "dvds": "dvddrive", "floppies": "fdd"}
+    for cmd, dev in storage_types.items():
+        storage_list = _runVBoxManage(["list", cmd])
+        for line in storage_list:
+            if len(line) == 0:
+                continue
+            if line.startswith("UUID:"):
+                current_storage = line[5:].strip()
+                storage[current_storage] = {"Device": dev}
+            else:
+                key, tmp_val = line.split(": ")
+                val = tmp_val.strip()
+                if (key == "Parent UUID") and (val == "base"):
+                    continue
+                storage[current_storage][key] = val
+    return storage
+
+
+def _find_storage_base(our_uuid, storage_list=None):
+    if not storage_list:
+        storage_list = getStorageList()
+    parentUUID = storage_list[our_uuid].get("Parent UUID", None)
+    if parentUUID:
+        return _find_storage_base(parentUUID, storage_list=storage_list)
+    return (
+        storage_list[our_uuid]["Location"],
+        storage_list[our_uuid]["Device"],
+        our_uuid,
+    )
