@@ -69,7 +69,7 @@ def getHostExtpacks():
         else:
             key, val = line.split(":")
             extpacks[current_pack][key] = val.strip()
-    return extpacks
+    return _prune_data(extpacks)
 
 
 @app.get("/host/ostypes")
@@ -95,7 +95,7 @@ def getHostProperties():
     for line in properties_list:
         key, val = line.split(":")
         properties[key] = val.strip()
-    return properties
+    return _prune_data(properties)
 
 
 @app.get("/machines")
@@ -239,7 +239,7 @@ def getMachinesNodeInfo(vm: str):
     nodeinfo["nics"] = getNicInfo(vm)
     if found_storage:
         nodeinfo["storage"] = _getStorageInfo(disk_list)
-    return nodeinfo
+    return _prune_data(nodeinfo)
 
 
 @app.get("/dhcpservers")
@@ -279,7 +279,7 @@ def getHostonlynetsList():
         else:
             key, val = line.split(": ")
             hostonly[current_hostonly][key] = val.strip()
-    return hostonly
+    return _prune_data(hostonly)
 
 
 @app.get("/intnets")
@@ -516,6 +516,8 @@ def getStorageList():
                 val = tmp_val.strip()
                 if (key == "Parent UUID") and (val == "base"):
                     continue
+                if key == "Storage format":
+                    key = "Format"
                 storage[current_storage][key] = val
     return storage
 
@@ -531,3 +533,20 @@ def _find_storage_base(our_uuid, storage_list=None):
         storage_list[our_uuid]["Device"],
         our_uuid,
     )
+
+
+def _prune_data(our_data):
+    unwanted = ["disabled", "none", "not set", "null", "off"]
+    data_keys = list(our_data.keys())
+    for our_key in data_keys:
+        if len(our_data[our_key]) == 0:
+            del our_data[our_key]
+        elif type(our_data[our_key]) is dict:
+            tmp_data = _prune_data(our_data[our_key])
+            if len(tmp_data) > 0:
+                our_data[our_key] = tmp_data
+            else:
+                del our_data[our_key]
+        elif our_data[our_key].lower() in unwanted:
+            del our_data[our_key]
+    return our_data
