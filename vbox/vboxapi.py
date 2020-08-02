@@ -553,6 +553,16 @@ def _prune_data(our_data):
     return our_data
 
 
+def _getMachineState(vm: str):
+    nodeinfo_list = _runVBoxManage(["showvminfo", vm, "--machinereadable"])
+    for line in nodeinfo_list:
+        delim = line.find("=")
+        key = line[:delim].strip('"=')
+        val = line[delim:].strip('"=')
+        if key == "VMState":
+            return val
+
+
 class controlInput(BaseModel):
     """
     op must be one of: acpipoweroff, pause, poweroff, reset, resume, savestate, start
@@ -586,18 +596,17 @@ def controlMachineState(vm: str, body: controlInput):
         "running": ["acpipoweroff", "pause", "poweroff", "reset", "savestate"],
         "saved": ["start"],
     }
-    all_vms = list(getMachinesList().keys())
-    if not vm in all_vms:
-        raise HTTPException(
-            status_code=405, detail=f"The specified machine ({vm}) does not exist."
-        )
     if not our_op in valid_ops:
         raise HTTPException(
             status_code=405,
             detail=f"The specified operation ({our_op}) does not exist.",
         )
-    vm_info = getMachinesNodeInfo(vm)
-    our_state = vm_info["VMState"]
+    all_vms = list(getMachinesList().keys())
+    if not vm in all_vms:
+        raise HTTPException(
+            status_code=405, detail=f"The specified machine ({vm}) does not exist."
+        )
+    our_state = _getMachineState(vm)
     if our_state in list(no_changes.keys()):
         if our_op in no_changes[our_state]:
             return f"{vm} is already in the {our_state} state."
