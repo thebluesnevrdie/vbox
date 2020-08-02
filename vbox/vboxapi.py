@@ -1,5 +1,6 @@
 import re, subprocess
 from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
 
 app = FastAPI()
 
@@ -550,3 +551,65 @@ def _prune_data(our_data):
         elif our_data[our_key].lower() in unwanted:
             del our_data[our_key]
     return our_data
+
+
+class controlInput(BaseModel):
+    """
+    op must be one of: acpipoweroff, pause, poweroff, reset, resume, savestate, start
+    """
+
+    op: str
+
+
+@app.put("/machines/{vm}/control")
+def controlMachineState(vm: str, body: controlInput):
+    our_op = body.op.lower()
+    valid_ops = (
+        "acpipoweroff",
+        "pause",
+        "poweroff",
+        "reset",
+        "resume",
+        "savestate",
+        "start",
+    )
+    no_changes = {
+        "paused": ["pause"],
+        "poweroff": ["acpipoweroff", "poweroff"],
+        "running": ["resume", "start"],
+        "saved": ["savestate"],
+    }
+    valid_changes = {
+        "aborted": ["start"],
+        "paused": ["poweroff", "resume"],
+        "poweroff": ["start"],
+        "running": ["acpipoweroff", "pause", "poweroff", "reset", "savestate"],
+        "saved": ["start"],
+    }
+    all_vms = list(getMachinesList().keys())
+    if not vm in all_vms:
+        raise HTTPException(
+            status_code=405, detail=f"The specified machine ({vm}) does not exist."
+        )
+    if not our_op in valid_ops:
+        raise HTTPException(
+            status_code=405,
+            detail=f"The specified operation ({our_op}) does not exist.",
+        )
+    vm_info = getMachinesNodeInfo(vm)
+    our_state = vm_info["VMState"]
+    if our_state in list(no_changes.keys()):
+        if our_op in no_changes[our_state]:
+            return f"{vm} is already in the {our_state} state."
+    if our_op not in valid_changes[our_state]:
+        raise HTTPException(
+            status_code=405,
+            detail=f"The specified operation ({our_op}) is invalid for the {our_state} state.",
+        )
+    if our_op == "start":
+        our_output = _runVBoxManage(["startvm", "--type", "headless", vm])
+    else:
+        if our_op == "acpipoweroff":
+            our_op = "acpipowerbutton"
+        our_output = _runVBoxManage(["controlvm", vm, our_op])
+    return our_output
