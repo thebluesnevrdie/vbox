@@ -565,7 +565,7 @@ def _getMachineState(vm: str):
 
 class controlInput(BaseModel):
     """
-    op must be one of: acpipoweroff, pause, poweroff, reset, resume, savestate, start
+    op must be one of: acpipoweroff, discardstate, pause, poweroff, reset, resume, savestate, start
     """
 
     op: str
@@ -576,6 +576,7 @@ def controlMachineState(vm: str, body: controlInput):
     our_op = body.op.lower()
     valid_ops = (
         "acpipoweroff",
+        "discardstate",
         "pause",
         "poweroff",
         "reset",
@@ -585,16 +586,17 @@ def controlMachineState(vm: str, body: controlInput):
     )
     no_changes = {
         "paused": ["pause"],
-        "poweroff": ["acpipoweroff", "poweroff"],
+        "poweroff": ["acpipoweroff", "discardstate", "poweroff"],
         "running": ["resume", "start"],
         "saved": ["savestate"],
     }
     valid_changes = {
         "aborted": ["start"],
+        "gurumeditation": ["poweroff"],
         "paused": ["poweroff", "resume"],
         "poweroff": ["start"],
         "running": ["acpipoweroff", "pause", "poweroff", "reset", "savestate"],
-        "saved": ["start"],
+        "saved": ["discardstate", "start"],
     }
     if not our_op in valid_ops:
         raise HTTPException(
@@ -617,6 +619,8 @@ def controlMachineState(vm: str, body: controlInput):
         )
     if our_op == "start":
         our_output = _runVBoxManage(["startvm", "--type", "headless", vm])
+    elif our_op == "discardstate":
+        our_output = _runVBoxManage(["discardstate", vm])
     else:
         if our_op == "acpipoweroff":
             our_op = "acpipowerbutton"
