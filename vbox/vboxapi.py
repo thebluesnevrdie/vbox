@@ -40,6 +40,8 @@ def getHostInfo():
     info = {"version": version, "CPUs": {}}
     hostinfo = _runVBoxManage(["list", "hostinfo"])[2:]
     for line in hostinfo:
+        if len(line) == 0:
+            continue
         if line.startswith("Host time"):
             info["Host time"] = line[11:]
         elif line.startswith("Processor#"):
@@ -62,6 +64,8 @@ def getHostExtpacks():
     if len(extpacks_list) == 0:
         return {}
     for line in extpacks_list:
+        if len(line) == 0:
+            continue
         if line.startswith("Pack no."):
             tmp_key, val = line.split(":")
             key = tmp_key[8:].strip()
@@ -94,6 +98,8 @@ def getHostProperties():
     properties = {}
     properties_list = _runVBoxManage(["list", "systemproperties"])
     for line in properties_list:
+        if len(line) == 0:
+            continue
         key, val = line.split(":")
         properties[key] = val.strip()
     return _prune_data(properties)
